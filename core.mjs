@@ -44,8 +44,28 @@ export function searchResults(body,site,{publicWeb=false}={}){const found=[],see
  }
  for(const a of body.matchAll(/<a\b[^>]*href\s*=\s*(["'])(.*?)\1[^>]*>([\s\S]*?)<\/a>/gi))add(a[2],a[3]);return found.slice(0,16);
 }
+export function isChineseText(value){
+ const t=htmlText(value),han=(t.match(/[\u3400-\u9fff]/g)||[]).length,latin=(t.match(/[a-z]/gi)||[]).length,kana=(t.match(/[\u3040-\u30ff]/g)||[]).length,hangul=(t.match(/[\uac00-\ud7af]/g)||[]).length;
+ return han>=2&&han/(han+latin+kana+hangul)>=.15&&kana<=han*.2&&hangul<=han*.2;
+}
+export function isChinesePost(post){const body=String(post?.text||'').trim();return isChineseText(body.length>=30?body:String(post?.title||'')+' '+body);}
+export function preferredQuery(input){
+ const keyword=String(input.query||'').replace(/[\u0000-\u001f]/g,' ').trim().slice(0,100),title=String(input.title||'').trim().slice(0,100);
+ if(isChineseText(keyword))return keyword;
+ if(isChineseText(title))return title;
+ return keyword||title;
+}
+function indexedSummary(candidates,chineseOnly=false){
+ for(const item of candidates){if(htmlText(item.description).length<30||chineseOnly&&!isChineseText(item.description))continue;const post=pack(item.provider,item.url,item.title,'',item.description,[],true);if(post){post.retrieval='search-index';post.language=isChinesePost(post)?'zh':'foreign';return post;}}return null;
+}
+function searchURL(query,rss=false,engine='bing'){
+ const url=new URL(engine==='duck'?'https://html.duckduckgo.com/html/':'https://www.bing.com/search');url.searchParams.set('q',query);
+ if(engine==='duck')url.searchParams.set('kl','cn-zh');else{url.searchParams.set('mkt','zh-CN');url.searchParams.set('setlang','zh-hans');url.searchParams.set('cc','cn');if(rss)url.searchParams.set('format','rss');}return url.href;
+}
 function terms(query){return [...new Set([...new Intl.Segmenter('zh',{granularity:'word'}).segment(query.toLowerCase())].filter(p=>p.isWordLike&&p.segment.length>1).map(p=>p.segment))].slice(0,20);}
-export function rankCandidates(items,query,seed=''){const ts=terms(query);return items.map(v=>({...v,score:ts.reduce((n,t)=>n+(v.title.toLowerCase().includes(t)?5:0)+(v.description.toLowerCase().includes(t)?1:0),0),mix:mixSeed(seed+v.url)})).filter(v=>!ts.length||v.score>0).sort((a,b)=>b.score-a.score||a.mix-b.mix);}
+export function rankCandidates(items,query,seed=''){
+ const ts=terms(query);return items.map(v=>({...v,chinese:isChineseText(v.title+' '+v.description),score:ts.reduce((n,t)=>n+(v.title.toLowerCase().includes(t)?5:0)+(v.description.toLowerCase().includes(t)?1:0),0),mix:mixSeed(seed+v.url)})).filter(v=>!ts.length||v.score>0).sort((a,b)=>Number(b.chinese)-Number(a.chinese)||b.score-a.score||a.mix-b.mix);
+}
 export function createService({fetcher=fetch,timeout=24000,now=Date.now,publicWeb=false}={}){
  const cache=new Map(),inflight=new Map();let running=0;const queue=[];
  async function slot(fn){if(running>=2){if(queue.length>=32)throw Error('busy');await new Promise(resolve=>queue.push(resolve));}running++;try{return await fn();}finally{running--;queue.shift()?.();}}
@@ -73,11 +93,11 @@ export function createService({fetcher=fetch,timeout=24000,now=Date.now,publicWe
   return null;
  }
  async function run(input){
-  const site=Object.hasOwn(SITES,input.site)?input.site:'web',q=String(input.query||input.title||'').replace(/[\u0000-\u001f]/g,' ').trim().slice(0,100),seed=String(input.seed||'').slice(0,120),exclude=new Set((input.exclude||[]).slice(0,30));
+  const site=Object.hasOwn(SITES,input.site)?input.site:'web',q=preferredQuery(input),seed=String(input.seed||'').slice(0,120),exclude=new Set((input.exclude||[]).slice(0,30));
   const key=JSON.stringify([site,q,seed,input.url||'',[...exclude].sort()]);const old=cache.get(key);if(old&&old.until>now())return old.value;if(inflight.has(key))return inflight.get(key);
   const work=slot(async()=>{
    const controller=new AbortController(),abort=()=>controller.abort(),trace=[];let searched=0,matched=0,read=0;
-   let post=null,candidates=[];
+   let post=null,foreign=null,candidates=[];
    input.signal?.addEventListener('abort',abort,{once:true});if(input.signal?.aborted)controller.abort();const timer=setTimeout(abort,timeout);
    try{
     if(input.url&&allowed(input.url,publicWeb)&&specific(input.url,sourceSite(input.url))){read++;post=await resolve(input.url,sourceSite(input.url),controller.signal,trace);}
@@ -86,27 +106,33 @@ export function createService({fetcher=fetch,timeout=24000,now=Date.now,publicWe
      const domain=site==='web'?'':SITES[site].hosts[0];
      const query=(domain?'site:'+domain+' ':'')+q;
      if(!post){
-      const urls=['https://www.bing.com/search?q='+encodeURIComponent(query),'https://html.duckduckgo.com/html/?q='+encodeURIComponent(query)];searched+=urls.length;
+      const urls=[searchURL(query),searchURL(query,false,'duck')];searched+=urls.length;
       const pages=await Promise.allSettled(urls.map(url=>resource(url,controller.signal,6000,trace,'search')));
       const fatal=trace.find(e=>['native_unavailable','session_required','native_response','transport_disabled'].includes(e.code));if(fatal)throw Object.assign(Error(fatal.code),{code:fatal.code});
       let found=pages.flatMap(r=>r.status==='fulfilled'?searchResults(r.value.body,site,{publicWeb}):[]);
-      if(!found.length&&!controller.signal.aborted){searched++;try{const r=await resource('https://www.bing.com/search?q='+encodeURIComponent(query)+'&format=rss',controller.signal,6000,trace,'search');found=searchResults(r.body,site,{publicWeb});}catch{}}
-      candidates=rankCandidates([...new Map(found.map(v=>[v.url,v])).values()],q+' '+String(input.title||''),seed).filter(v=>!exclude.has(v.url));
+      if(!found.length&&!controller.signal.aborted){searched++;try{const r=await resource(searchURL(query,true),controller.signal,6000,trace,'search');found=searchResults(r.body,site,{publicWeb});}catch{}}
+      candidates=rankCandidates([...new Map(found.map(v=>[v.url,v])).values()],q+' '+String(input.query||'')+' '+String(input.title||''),seed).filter(v=>!exclude.has(v.url));
       if(!candidates.length&&input.title&&String(input.title).trim()!==q&&!controller.signal.aborted){
        searched++;const alternate=(domain?'site:'+domain+' ':'')+String(input.title).trim().slice(0,100);
-       try{const page=await resource('https://www.bing.com/search?format=rss&q='+encodeURIComponent(alternate),controller.signal,6000,trace,'search');candidates=rankCandidates(searchResults(page.body,site,{publicWeb}),q+' '+input.title,seed).filter(v=>!exclude.has(v.url));}catch{}
+       try{const page=await resource(searchURL(alternate,true),controller.signal,6000,trace,'search');candidates=rankCandidates(searchResults(page.body,site,{publicWeb}),q+' '+String(input.query||'')+' '+input.title,seed).filter(v=>!exclude.has(v.url));}catch{}
       }
       matched=candidates.length;
      }
-     for(const candidate of candidates.slice(0,4)){read++;post=await resolve(candidate.url,candidate.provider,controller.signal,trace);if(post)break;}
-     if(!post){const excerpt=candidates.find(v=>htmlText(v.description).length>=30);if(excerpt){post=pack(excerpt.provider,excerpt.url,excerpt.title,'',excerpt.description,[],true);if(post)post.retrieval='search-index';}}
+     for(const [index,candidate] of candidates.slice(0,4).entries()){read++;const item=await resolve(candidate.url,candidate.provider,controller.signal,trace);if(!item)continue;if(isChinesePost(item)){post=item;break;}foreign=foreign||item;if(!candidates.slice(index+1,4).some(v=>v.chinese))break;}
+     if(!post)post=indexedSummary(candidates,true);
     }
+    if(!post)post=foreign||indexedSummary(candidates);
+    if(post)post.language=isChinesePost(post)?'zh':'foreign';
     let code=!q&&!input.url?'empty_query':read?'source_unreadable':'no_matches';
     if(!post&&!matched&&trace.some(e=>e.stage==='search'))code=trace.some(e=>e.code==='search_blocked')?'search_blocked':'network_error';
     const result=post?{status:'ready',post,matchedBy:input.url?'source-link':'keyword-search'}:{status:['network_error','search_blocked'].includes(code)?'error':'placeholder',site:SITES[site].name,code,reason:failureReason(code)};
     result.diagnostics={searched,matched,read,errors:trace.slice(-12)};
     if(result.status!=='error')cache.set(key,{value:result,until:now()+(post?15*60*1000:15000)});if(cache.size>500)cache.delete(cache.keys().next().value);return result;
-   }catch(e){const excerpt=!input.signal?.aborted&&candidates.find(v=>htmlText(v.description).length>=30);if(excerpt){const summary=pack(excerpt.provider,excerpt.url,excerpt.title,'',excerpt.description,[],true);if(summary){summary.retrieval='search-index';return{status:'ready',post:summary,matchedBy:'keyword-search',diagnostics:{searched,matched,read,errors:trace.slice(-12)}};}}const code=controller.signal.aborted?(input.signal?.aborted?'cancelled':'timeout'):e.code||'network_error';return{status:'error',site:SITES[site].name,code,reason:failureReason(code),diagnostics:{searched,matched,read,errors:trace.slice(-12)}};}
+   }catch(e){
+    const fallback=!input.signal?.aborted&&(indexedSummary(candidates,true)||foreign||indexedSummary(candidates));
+    if(fallback){fallback.language=isChinesePost(fallback)?'zh':'foreign';return{status:'ready',post:fallback,matchedBy:'keyword-search',diagnostics:{searched,matched,read,errors:trace.slice(-12)}};}
+    const code=controller.signal.aborted?(input.signal?.aborted?'cancelled':'timeout'):e.code||'network_error';return{status:'error',site:SITES[site].name,code,reason:failureReason(code),diagnostics:{searched,matched,read,errors:trace.slice(-12)}};
+   }
    finally{clearTimeout(timer);input.signal?.removeEventListener('abort',abort);}
   });
   inflight.set(key,work);try{return await work;}catch{return{status:'error',code:'queue_full',reason:failureReason('queue_full')};}finally{inflight.delete(key);}

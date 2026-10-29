@@ -1,5 +1,5 @@
-import { installNativeFeed } from './native-transport.mjs?v=2.0.2';
-import { failureReason } from './core.mjs?v=2.0.2';
+import { installNativeFeed } from './native-transport.mjs?v=2.0.3';
+import { failureReason } from './core.mjs?v=2.0.3';
 /* 标准酒馆扩展：复用内置网页读取接口，不要求另装Node后台服务。 */
 const PANEL_ID = 'lf-notebook-feed-extension';
 let enabled = false, listener = null, request = null, feed = null;

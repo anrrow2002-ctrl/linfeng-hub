@@ -1,6 +1,6 @@
-import { createService, publicURL } from './core.mjs?v=2.0.2';
+import { createService, publicURL } from './core.mjs?v=2.0.3';
 
-const VERSION = '2.0.2';
+const VERSION = '2.0.3';
 function fault(code, message) { return Object.assign(new Error(message || code), { code }); }
 function joinSignals(signals) {
     const list = signals.filter(Boolean);
