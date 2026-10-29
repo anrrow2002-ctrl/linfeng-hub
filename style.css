@@ -7,3 +7,9 @@
 #lf-notebook-feed-extension .lf-feed-status[data-state="unavailable"]{border-left-color:#c3a29e}
 #lf-notebook-feed-extension button{min-height:44px;display:inline-flex!important;align-items:center;justify-content:center;width:auto!important;min-width:140px;writing-mode:horizontal-tb!important;word-break:normal!important;letter-spacing:normal!important;padding:8px 12px!important;max-width:100%;white-space:normal}
 #lf-notebook-feed-extension .lf-feed-help{font-size:12px;opacity:.8}
+#lf-notebook-feed-extension .lf-feed-updater{margin-top:14px;padding-top:10px;border-top:1px dashed #9db8c6}
+#lf-notebook-feed-extension .lf-feed-update-actions{display:flex;flex-wrap:wrap;gap:8px}
+#lf-notebook-feed-extension .lf-feed-update-actions [hidden]{display:none!important}
+#lf-notebook-feed-extension .lf-feed-update-auto{display:flex;align-items:flex-start;gap:8px;font-size:12px;margin-top:12px;cursor:pointer}
+#lf-notebook-feed-extension .lf-feed-update-auto input{flex:none;margin:5px 0 0;width:18px;height:18px}
+#lf-notebook-feed-extension .lf-feed-update-status[data-state="staged"]{padding:9px;background:rgba(150,178,162,.16);border-left:3px solid #96b2a2}

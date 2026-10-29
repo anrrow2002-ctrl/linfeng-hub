@@ -1,8 +1,9 @@
-import { installNativeFeed } from './native-transport.mjs?v=2.0.3';
-import { failureReason } from './core.mjs?v=2.0.3';
+import { installNativeFeed } from './native-transport.mjs?v=2.1.0';
+import { failureReason } from './core.mjs?v=2.1.0';
+import { installExtensionUpdater } from './updater.mjs?v=2.1.0';
 /* 标准酒馆扩展：复用内置网页读取接口，不要求另装Node后台服务。 */
 const PANEL_ID = 'lf-notebook-feed-extension';
-let enabled = false, listener = null, request = null, feed = null;
+let enabled = false, listener = null, request = null, feed = null, updater = null;
 
 function element(tag, className, value) {
     const node = document.createElement(tag);
@@ -13,7 +14,7 @@ function element(tag, className, value) {
 
 async function checkBackend(panel) {
     if (request) return;
-    const button = panel.querySelector('button');
+    const button = panel.querySelector('.lf-feed-check');
     const status = panel.querySelector('[role="status"]');
     const controller = new AbortController();
     request = controller;
@@ -52,13 +53,48 @@ function mount() {
     status.setAttribute('role', 'status');
     status.setAttribute('aria-live', 'polite');
     panel.appendChild(status);
-    const button = element('button', 'menu_button', '检查联网接口');
+    const button = element('button', 'menu_button lf-feed-check', '检查联网接口');
     button.type = 'button';
     button.addEventListener('click', () => checkBackend(panel));
     panel.appendChild(button);
     panel.appendChild(element('p', 'lf-feed-help', '直接使用酒馆已有的联网接口，安装扩展后刷新即可。站点受限、搜索失败和接口不可用会分别提示。'));
     target.appendChild(panel);
+    mountUpdater(panel);
     void checkBackend(panel);
+}
+
+function mountUpdater(panel) {
+    const box = element('div', 'lf-feed-updater');
+    const message = element('p', 'lf-feed-update-status', '正在检查插件版本…');
+    message.setAttribute('aria-live', 'polite');
+    const actions = element('div', 'lf-feed-update-actions');
+    const check = element('button', 'menu_button', '检查插件更新');
+    const prepare = element('button', 'menu_button', '下载新版');
+    const refresh = element('button', 'menu_button', '刷新后使用新版');
+    for (const button of [check, prepare, refresh]) { button.type = 'button'; actions.appendChild(button); }
+    const label = element('label', 'lf-feed-update-auto');
+    const auto = element('input'); auto.type = 'checkbox'; auto.checked = true;
+    label.append(auto, element('span', '', '自动准备这个插件的更新，刷新后生效'));
+    box.append(message, actions, label);
+    panel.appendChild(box);
+    updater?.close();
+    updater = installExtensionUpdater(globalThis, {
+        version: '2.1.0', moduleURL: import.meta.url,
+        onChange(state) {
+            if (!enabled || !box.isConnected) return;
+            message.textContent = state.message + (state.latestVersion ? ' · v' + state.latestVersion : '');
+            message.dataset.state = state.status;
+            check.disabled = ['checking', 'downloading'].includes(state.status);
+            prepare.hidden = !state.verified || !['available', 'failed', 'permission'].includes(state.status);
+            prepare.disabled = state.status === 'permission';
+            refresh.hidden = state.status !== 'staged';
+            auto.checked = state.autoStage;
+        },
+    });
+    check.addEventListener('click', () => void updater?.check());
+    prepare.addEventListener('click', () => void updater?.prepare());
+    refresh.addEventListener('click', () => globalThis.location.reload());
+    auto.addEventListener('change', () => updater?.setAutoStage(auto.checked));
 }
 
 export function onEnable() {
@@ -79,6 +115,7 @@ export function onEnable() {
 
 export function onDisable() {
     enabled = false;
+    updater?.close(); updater = null;
     feed?.close(); feed = null;
     request?.abort();
     request = null;
