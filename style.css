@@ -1,0 +1,9 @@
+/* 只影响扩展设置面板，手帐继续使用已确认的拼贴样式。 */
+#lf-notebook-feed-extension{margin:12px 0;padding:14px;border:1px dashed #9db8c6;border-radius:5px 11px 6px 9px;background:var(--SmartThemeBlurTintColor,rgba(147,177,194,.12));color:var(--SmartThemeBodyColor,inherit);font-size:14px;line-height:1.7;overflow-wrap:anywhere}
+#lf-notebook-feed-extension summary{cursor:pointer;font-weight:600;min-height:32px;color:var(--SmartThemeBodyColor,inherit)}
+#lf-notebook-feed-extension p{margin:10px 0}
+#lf-notebook-feed-extension .lf-feed-status{padding:10px;border-left:3px solid #a4bdcb;background:rgba(147,177,194,.13);white-space:pre-wrap}
+#lf-notebook-feed-extension .lf-feed-status[data-state="ready"]{border-left-color:#96b2a2}
+#lf-notebook-feed-extension .lf-feed-status[data-state="unavailable"]{border-left-color:#c3a29e}
+#lf-notebook-feed-extension button{min-height:44px;padding:8px 12px;max-width:100%;white-space:normal}
+#lf-notebook-feed-extension .lf-feed-help{font-size:12px;opacity:.8}

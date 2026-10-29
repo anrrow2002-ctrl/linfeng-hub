@@ -1,0 +1,9 @@
+{
+  "name": "linfeng-notes-server-plugin",
+  "version": "2.0.1",
+  "private": true,
+  "type": "module",
+  "main": "index.mjs",
+  "description": "林锋手帐的后台自动搜帖、匹配和解析插件",
+  "engines": { "node": ">=20.3.0" }
+}

@@ -1,0 +1,16 @@
+{
+  "display_name": "林锋手帐 · 自动推送",
+  "author": "林锋手帐",
+  "version": "2.0.1",
+  "loading_order": 100,
+  "requires": [],
+  "optional": [],
+  "dependencies": [],
+  "js": "index.js",
+  "css": "style.css",
+  "hooks": {
+    "enable": "onEnable",
+    "disable": "onDisable",
+    "delete": "onDisable"
+  }
+}
